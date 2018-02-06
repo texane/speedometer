@@ -1,0 +1,30 @@
+first thing to test: connect GPS, receive data on uart. Will uno bootloader fail ?
+
+https://www.unmannedtechshop.co.uk/ublox-neo-7m-gps-with-compass/
+
+gps connector pinout
+red 3.3v
+black gnd
+green TX (goes to ftdi RX)
+yellow RX (goes to ftdi TX)
+
+compass connector pinout:
+orange
+white
+
+gopro box dimension
+40x60x35
+
+leds
+red: off = OK, on = fault, blink = need charge
+green: off when moving but on as soon as max speed reached
+
+sdcard
+slot or expander
+pb2 (10) ss (CS)
+pb3 (11) mosi (DI)
+pb4 (12) miso (DO)
+pb5 (13) sck (SCK)
+
+
+autonomy: 2h min
