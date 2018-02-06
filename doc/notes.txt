@@ -7,6 +7,7 @@ red 3.3v
 black gnd
 green TX (goes to ftdi RX)
 yellow RX (goes to ftdi TX)
+9600 8n1
 
 compass connector pinout:
 orange

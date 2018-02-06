@@ -10,11 +10,18 @@
 #include "./uart.c"
 #endif /* CONFIG_UART */
 
+#if 0 /* TODO */
 #define CONFIG_SD
 #ifdef CONFIG_SD
 #include "./spi.c"
 #include "./sd.c"
 #endif /* CONFIG_SD */
+#endif /* 0 */
+
+#define CONFIG_GPS
+#ifdef CONFIG_GPS
+#include "./gps.c"
+#endif /* CONFIG_GPS */
 
 
 /* main */
@@ -24,6 +31,10 @@ int main(void)
 #ifdef CONFIG_UART
   uart_setup();
 #endif /* CONFIG_UART */
+
+#ifdef CONFIG_GPS
+  gps_setup();
+#endif /* CONFIG_SD */
 
 #ifdef CONFIG_SD
   spi_setup_master();
@@ -36,15 +47,12 @@ int main(void)
   sd_unit();
 #endif /* CONFIG_SD */
 
+#ifdef CONFIG_GPS
+  gps_unit();
+#endif /* CONFIG_GPS */
+
   while (1)
   {
-    _delay_ms(250);
-    _delay_ms(250);
-    _delay_ms(250);
-    _delay_ms(250);
-
-    UART_WRITE_STRING("delay");
-    uart_write_rn();
   }
 
   return 0;

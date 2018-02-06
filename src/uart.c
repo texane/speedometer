@@ -15,7 +15,7 @@ static inline void set_baud_rate(long baud)
 static void uart_setup(void)
 {
 #if (CLK_PRESCAL == 1UL)
-  set_baud_rate(115200);
+  set_baud_rate(9600);
 #else
   set_baud_rate(300);
 #endif
@@ -130,4 +130,21 @@ static uint8_t* uint32_to_string(uint32_t x)
   hex_buf[0] = hex(nibble(x, 7));
 
   return hex_buf;
+}
+
+
+static void uart_unit(void)
+{
+  uint8_t x;
+
+  while (1)
+  {
+    UART_WRITE_STRING("wait");
+
+    uart_read_uint8(&x);
+    UART_WRITE_STRING(" ");
+    uart_write(uint8_to_string(x), 2);
+
+    uart_write_rn();
+  }
 }
