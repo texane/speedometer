@@ -28,6 +28,7 @@ int main(void)
 {
   uint8_t* buf;
   uint8_t i;
+  uint8_t len;
   uint16_t bid;
 
 #ifdef CONFIG_UART
@@ -52,12 +53,14 @@ int main(void)
     buf = sd_block_buf;
 
     /* warning: i uint8_t, cannot exceed 255 */
-#define LOG_BLOCK_SIZE 8
+#define LOG_BLOCK_SIZE 32
     for (i = 0; i != (SD_BLOCK_SIZE / LOG_BLOCK_SIZE); ++i)
     {
-      gps_next_gpvtg(buf);
+      gps_next_gpgll(buf, &len);
+      buf[len] = ',';
+      gps_next_gpvtg(buf + len + 1);
 
-      uart_write(buf, 5);
+      uart_write(buf, len + 1 + 5);
       uart_write_rn();
 
       buf += LOG_BLOCK_SIZE;

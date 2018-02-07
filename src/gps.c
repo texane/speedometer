@@ -46,7 +46,48 @@ static void gps_next_gpvtg(uint8_t* buf)
     buf[4] = '0';
     return ;
   }
+
   for (i = 1; i != 5; ++i) uart_read_uint8(&buf[i]);
+}
+
+
+static void gps_next_gpgll(uint8_t* buf, uint8_t* len)
+{
+  uint8_t i;
+  uint8_t c;
+
+ redo_line:
+  gps_skip_until('$');
+
+  uart_read_uint8(&c);
+  if (c != 'G') goto redo_line;
+  uart_read_uint8(&c);
+  if (c != 'P') goto redo_line;
+  uart_read_uint8(&c);
+  if (c != 'G') goto redo_line;
+  uart_read_uint8(&c);
+  if (c != 'L') goto redo_line;
+  uart_read_uint8(&c);
+  if (c != 'L') goto redo_line;
+
+  gps_skip_until(',');
+
+  *len = 0;
+  i = 0;
+  while (1)
+  {
+    uart_read_uint8(&c);
+
+    if (c == ',')
+    {
+      if ((++i) == 3) break ;
+    }
+
+    buf[(*len)++] = c;
+  }
+
+  uart_read_uint8(&c);
+  buf[(*len)++] = c;
 }
 
 
