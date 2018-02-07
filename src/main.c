@@ -54,7 +54,7 @@ int main(void)
     buf = sd_block_buf;
 
     /* warning: i uint8_t, cannot exceed 255 */
-#define LOG_BLOCK_SIZE 32
+#define LOG_BLOCK_SIZE 64
     for (i = 0; i != (SD_BLOCK_SIZE / LOG_BLOCK_SIZE); ++i)
     {
 #if 0 /* if GPRMC not available */

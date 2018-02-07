@@ -114,8 +114,6 @@ static void gps_next_gprmc(uint8_t* buf, uint8_t* len)
   if (c != 'C') goto redo_line;
 
   gps_skip_until(',');
-  gps_skip_until(',');
-  gps_skip_until(',');
 
   *len = 0;
   i = 0;
@@ -125,7 +123,7 @@ static void gps_next_gprmc(uint8_t* buf, uint8_t* len)
 
     if (c == ',')
     {
-      if ((++i) == 5) break ;
+      if ((++i) == 9) break ;
     }
 
     buf[(*len)++] = c;
