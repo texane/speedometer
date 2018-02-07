@@ -56,11 +56,16 @@ int main(void)
 #define LOG_BLOCK_SIZE 32
     for (i = 0; i != (SD_BLOCK_SIZE / LOG_BLOCK_SIZE); ++i)
     {
+#if 0
       gps_next_gpgll(buf, &len);
       buf[len] = ',';
       gps_next_gpvtg(buf + len + 1);
+      len += 1 + 5;
+#else
+      gps_next_gprmc(buf, &len);
+#endif
 
-      uart_write(buf, len + 1 + 5);
+      uart_write(buf, len);
       uart_write_rn();
 
       buf += LOG_BLOCK_SIZE;
