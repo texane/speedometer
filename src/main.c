@@ -46,6 +46,7 @@ int main(void)
 
   sei();
 
+  /* TODO: find first unused block */
   bid = 0;
 
   while (1)
@@ -56,7 +57,7 @@ int main(void)
 #define LOG_BLOCK_SIZE 32
     for (i = 0; i != (SD_BLOCK_SIZE / LOG_BLOCK_SIZE); ++i)
     {
-#if 0
+#if 0 /* if GPRMC not available */
       gps_next_gpgll(buf, &len);
       buf[len] = ',';
       gps_next_gpvtg(buf + len + 1);
@@ -65,13 +66,17 @@ int main(void)
       gps_next_gprmc(buf, &len);
 #endif
 
-      uart_write(buf, len);
+      buf[len++] = '\n';
+
+#if 1
+      uart_write(buf, len - 1);
       uart_write_rn();
+#endif
 
       buf += LOG_BLOCK_SIZE;
     }
 
-    /* sd_write_block(bid); */
+    sd_write_block(bid);
 
     bid += 1;
   }
