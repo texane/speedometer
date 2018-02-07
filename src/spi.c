@@ -20,8 +20,8 @@ static inline void spi_setup_master(void)
 
   /* spi input pins: miso pb4 */
   DDRB &= ~(1 << 4);
-  /* disable pullup (already by default) */
-  PORTB &= ~(1 << 4);
+  /* enable pullup */
+  PORTB |= 1 << 4;
 
   /* enable spi, msb first, master, freq / 64 (125khz), sck low idle */
   SPCR = (1 << SPE) | (1 << MSTR) | (2 << SPR0);

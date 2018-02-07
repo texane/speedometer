@@ -37,19 +37,28 @@ static void gps_next_gpvtg(uint8_t* buf)
   for (i = 0; i != 7; ++i) gps_skip_until(',');
 
   uart_read_uint8(&buf[0]);
-  if (buf[0] == ',') goto redo_line;
+  if (buf[0] == ',')
+  {
+    buf[0] = '0';
+    buf[1] = '0';
+    buf[2] = '0';
+    buf[3] = '.';
+    buf[4] = '0';
+    return ;
+  }
   for (i = 1; i != 5; ++i) uart_read_uint8(&buf[i]);
 }
 
 
+__attribute__((unused))
 static void gps_unit(void)
 {
-  static uint8_t buf[5];
+  static uint8_t buf[32];
+  uint8_t i;
 
   while (1)
   {
-    gps_next_gpvtg(buf);
-    uart_write(buf, 5);
-    uart_write_rn();
+    for (i = 0; i != sizeof(buf); ++i) uart_read_uint8(buf + i);
+    uart_write(buf, sizeof(buf));
   }
 }

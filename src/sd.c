@@ -510,9 +510,7 @@ static regtype_t sd_setup(void)
   return 0;
 }
 
-
-#if 1 /* unit */
-
+__attribute__((unused))
 static void sd_unit(void)
 {
 #if 1 /* write unit test */
@@ -548,8 +546,6 @@ static void sd_unit(void)
   }
 #endif /* read unit test */
 }
-
-#endif /* unit */
 
 
 #if 0 /* main */

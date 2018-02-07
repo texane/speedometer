@@ -10,13 +10,11 @@
 #include "./uart.c"
 #endif /* CONFIG_UART */
 
-#if 0 /* TODO */
 #define CONFIG_SD
 #ifdef CONFIG_SD
 #include "./spi.c"
 #include "./sd.c"
 #endif /* CONFIG_SD */
-#endif /* 0 */
 
 #define CONFIG_GPS
 #ifdef CONFIG_GPS
@@ -28,6 +26,10 @@
 
 int main(void)
 {
+  uint8_t* buf;
+  uint8_t i;
+  uint16_t bid;
+
 #ifdef CONFIG_UART
   uart_setup();
 #endif /* CONFIG_UART */
@@ -43,16 +45,27 @@ int main(void)
 
   sei();
 
-#ifdef CONFIG_SD
-  sd_unit();
-#endif /* CONFIG_SD */
-
-#ifdef CONFIG_GPS
-  gps_unit();
-#endif /* CONFIG_GPS */
+  bid = 0;
 
   while (1)
   {
+    buf = sd_block_buf;
+
+    /* warning: i uint8_t, cannot exceed 255 */
+#define LOG_BLOCK_SIZE 8
+    for (i = 0; i != (SD_BLOCK_SIZE / LOG_BLOCK_SIZE); ++i)
+    {
+      gps_next_gpvtg(buf);
+
+      uart_write(buf, 5);
+      uart_write_rn();
+
+      buf += LOG_BLOCK_SIZE;
+    }
+
+    /* sd_write_block(bid); */
+
+    bid += 1;
   }
 
   return 0;

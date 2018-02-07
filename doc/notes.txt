@@ -1,5 +1,3 @@
-first thing to test: connect GPS, receive data on uart. Will uno bootloader fail ?
-
 https://www.unmannedtechshop.co.uk/ublox-neo-7m-gps-with-compass/
 
 gps connector pinout
@@ -29,3 +27,31 @@ pb5 (13) sck (SCK)
 
 
 autonomy: 2h min
+
+
+fsampl
+5hz max
+512 bytes block, 8 bytes per sampl = 64 sampl per block
+blocks written every 13s
+2h session = 7200 blocks = 3.6MB
+
+procedure:
+. at startup, read first block
+. generate a magic from the 8 first bytes
+. this magic is prepended to all blocks so that we know if
+the block belongs to this session
+
+OR
+. at boot, read and look for an unused block
+. start at this first unused block
+. the external software will be in charge of erasing the session
+
+OR
+. use minimal version of FAT
+. one file per session with max size to avoid 
+
+TODO
+. in meta data, log coordinates
+. in meta data, log max speed
+. configure GPS in 115200 bauds
+. configure GPS to send only $GPGVT and coordinates
