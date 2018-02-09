@@ -149,12 +149,14 @@ static int gps_write_gpx(gps_item_t* li, const char* path)
 
   for (; li != NULL; li = li->next)
   {
+    if ((li->flags & GPS_FLAG_COORD) == 0) continue ;
+
     printf("<trkpt lat=\"%lf\" lon=\"%lf\">\n", li->coord[0], li->coord[1]);
 
 #if 0
     printf("<extensions>");
     printf("<gpxtpx:TrackPointExtension>\n");
-    printf("<gpxtpx:speed>6.86</gpxtpx:speed>\n");
+    printf("<gpxtpx:speed>%lf</gpxtpx:speed>\n", li->speed);
     printf("</gpxtpx:TrackPointExtension>\n");
     printf("</extensions>\n");
 #endif
@@ -163,6 +165,17 @@ static int gps_write_gpx(gps_item_t* li, const char* path)
   }
 
   printf("</trkseg></trk></gpx>\n");
+
+  return 0;
+}
+
+
+static int gps_write_plot(gps_item_t* li, const char* path)
+{
+  for (; li != NULL; li = li->next)
+  {
+    printf("%lf\n", li->speed);
+  }
 
   return 0;
 }
@@ -177,7 +190,6 @@ static int gps_load_dat(gps_item_t** li, const char* path)
   string_t line;
   gps_item_t** prev;
   gps_item_t* it;
-  size_t ni;
 
   *li = NULL;
 
@@ -186,8 +198,6 @@ static int gps_load_dat(gps_item_t** li, const char* path)
 
   *li = NULL;
   prev = li;
-
-  ni = 0;
 
   while (1)
   {
@@ -296,8 +306,6 @@ static int gps_load_dat(gps_item_t** li, const char* path)
     }
 
     /* gps_print_item(it); */
-
-    if ((++ni) == 600) break ;
   }
 
   err = 0;
@@ -307,7 +315,7 @@ static int gps_load_dat(gps_item_t** li, const char* path)
   {
     /* TODO */
     /* free_gps_list(*li); */
-    *li = NULL;
+    /* *li = NULL; */
   }
   close(fd);
  on_error_0:
@@ -318,15 +326,18 @@ static int gps_load_dat(gps_item_t** li, const char* path)
 int main(int ac, char** av)
 {
 #define PATH "../dat/road_082018."
+/* #define PATH "../dat/siouville_082018." */
 #define DAT_PATH PATH "dat"
 #define GPX_PATH PATH "gpx"
 
   gps_item_t* li;
   int err = -1;
 
-  if (gps_load_dat(&li, DAT_PATH)) goto on_error_0;
+  gps_load_dat(&li, DAT_PATH);
+  /* if (gps_load_dat(&li, DAT_PATH)) goto on_error_0; */
   /* gps_print_list(li); */
   if (gps_write_gpx(li, GPX_PATH)) goto on_error_1;
+  /* if (gps_write_plot(li, GPX_PATH)) goto on_error_1; */
 
   err = 0;
  on_error_1:
