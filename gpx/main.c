@@ -149,9 +149,17 @@ static int gps_write_gpx(gps_item_t* li, const char* path)
 
   for (; li != NULL; li = li->next)
   {
-    const double lat = li->coord[0];
-    const double lng = li->coord[1];
-    printf("<trkpt lat=\"%lf\" lon=\"%lf\"></trkpt>\n", lat, lng);
+    printf("<trkpt lat=\"%lf\" lon=\"%lf\">\n", li->coord[0], li->coord[1]);
+
+#if 0
+    printf("<extensions>");
+    printf("<gpxtpx:TrackPointExtension>\n");
+    printf("<gpxtpx:speed>6.86</gpxtpx:speed>\n");
+    printf("</gpxtpx:TrackPointExtension>\n");
+    printf("</extensions>\n");
+#endif
+
+    printf("</trkpt>\n");
   }
 
   printf("</trkseg></trk></gpx>\n");
