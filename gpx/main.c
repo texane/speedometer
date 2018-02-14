@@ -181,7 +181,7 @@ static int gps_write_plot(gps_item_t* li, const char* path)
 }
 
 
-static int gps_load_dat(gps_item_t** li, const char* path)
+static int gps_load_dat(gps_item_t** li, const char* path, size_t nline)
 {
   int fd;
   int err = -1;
@@ -306,6 +306,8 @@ static int gps_load_dat(gps_item_t** li, const char* path)
     }
 
     /* gps_print_item(it); */
+
+    if ((nline != 0) && ((--nline) == 0)) break ;
   }
 
   err = 0;
@@ -323,9 +325,17 @@ static int gps_load_dat(gps_item_t** li, const char* path)
 }
 
 
+static size_t gps_sec_to_nline(double x)
+{
+  /* fsampl = 1Hz */
+  return (size_t)ceil(x);
+}
+
+
 int main(int ac, char** av)
 {
-#define PATH "../dat/road_082018."
+#define PATH "../dat/road_140218."
+/* #define PATH "../dat/road_082018." */
 /* #define PATH "../dat/siouville_082018." */
 #define DAT_PATH PATH "dat"
 #define GPX_PATH PATH "gpx"
@@ -333,11 +343,14 @@ int main(int ac, char** av)
   gps_item_t* li;
   int err = -1;
 
-  gps_load_dat(&li, DAT_PATH);
+  if (gps_load_dat(&li, DAT_PATH, gps_sec_to_nline(6 * 60)))
+  {
+    goto on_error_0;
+  }
   /* if (gps_load_dat(&li, DAT_PATH)) goto on_error_0; */
   /* gps_print_list(li); */
-  if (gps_write_gpx(li, GPX_PATH)) goto on_error_1;
-  /* if (gps_write_plot(li, GPX_PATH)) goto on_error_1; */
+  /* if (gps_write_gpx(li, GPX_PATH)) goto on_error_1; */
+  if (gps_write_plot(li, GPX_PATH)) goto on_error_1;
 
   err = 0;
  on_error_1:
