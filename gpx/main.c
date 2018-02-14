@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <math.h>
+#include <string.h>
 #include <sys/types.h>
 
 
@@ -325,12 +326,84 @@ static int gps_load_dat(gps_item_t** li, const char* path, size_t nline)
 }
 
 
+__attribute__((unused))
 static size_t gps_sec_to_nline(double x)
 {
   /* fsampl = 1Hz */
   return (size_t)ceil(x);
 }
 
+
+/* command line options */
+
+typedef struct
+{
+#define OPT_FLAG_IPATH (1 << 0)
+#define OPT_FLAG_OPATH (1 << 1)
+#define OPT_FLAG_OFMT (1 << 2)
+#define OPT_FLAG_NLINE (1 << 3)
+  uint32_t flags;
+  const char* ipath;
+  const char* opath;
+  const char* ofmt;
+  size_t nline;
+} opt_t;
+
+
+static int opt_parse(opt_t* opt, int ac, const char** av)
+{
+  int err = -1;
+
+  opt->flags = 0;
+  opt->ipath = NULL;
+  opt->opath = NULL;
+  opt->ofmt = NULL;
+  opt->nline = 0;
+
+  if ((ac % 2)) goto on_error_0;
+
+  for (; ac; av += 2, ac -= 2)
+  {
+    const char* const k = av[0];
+    const char* const v = av[1];
+
+    if (strcmp(k, "-ipath") == 0)
+    {
+      opt->flags |= OPT_FLAG_IPATH;
+      opt->ipath = v;
+    }
+    else if (strcmp(k, "-opath") == 0)
+    {
+      opt->flags |= OPT_FLAG_OPATH;
+      opt->opath = v;
+    }
+    else if (strcmp(k, "-ofmt") == 0)
+    {
+      opt->flags |= OPT_FLAG_OFMT;
+      opt->ofmt = v;
+    }
+    else if (strcmp(k, "-nline") == 0)
+    {
+      char buf[32];
+      strncpy(buf, v, sizeof(buf) - 1);
+      buf[sizeof(buf) - 1] = 0;
+      opt->flags |= OPT_FLAG_NLINE;
+      opt->nline = (size_t)strtoul(buf, NULL, 10);
+    }
+    else
+    {
+      goto on_error_0;
+    }
+  }
+
+  err = 0;
+
+ on_error_0:
+  return err;
+}
+
+
+/* main */
 
 int main(int ac, char** av)
 {
@@ -341,16 +414,46 @@ int main(int ac, char** av)
 #define GPX_PATH PATH "gpx"
 
   gps_item_t* li;
+  opt_t opt;
   int err = -1;
 
-  if (gps_load_dat(&li, DAT_PATH, gps_sec_to_nline(6 * 60)))
+  if (opt_parse(&opt, ac - 1, (const char**)(av + 1)))
   {
     goto on_error_0;
   }
-  /* if (gps_load_dat(&li, DAT_PATH)) goto on_error_0; */
+
+  if ((opt.flags & OPT_FLAG_IPATH) == 0)
+  {
+    goto on_error_0;
+  }
+
+  if ((opt.flags & OPT_FLAG_NLINE) == 0)
+  {
+    opt.flags |= OPT_FLAG_NLINE;
+    opt.nline = 0;
+  }
+
+  if ((opt.flags & OPT_FLAG_OFMT) == 0)
+  {
+    opt.flags |= OPT_FLAG_OFMT;
+    opt.ofmt = "gpx";
+  }
+
+  if (gps_load_dat(&li, opt.ipath, opt.nline))
+  {
+    goto on_error_0;
+  }
+
   /* gps_print_list(li); */
-  /* if (gps_write_gpx(li, GPX_PATH)) goto on_error_1; */
-  if (gps_write_plot(li, GPX_PATH)) goto on_error_1;
+
+  if (strcmp(opt.ofmt, "gpx") == 0)
+  {
+    if (gps_write_gpx(li, opt.opath)) goto on_error_1;
+  }
+  else if (strcmp(opt.ofmt, "plt") == 0)
+  {
+    if (gps_write_plot(li, opt.opath)) goto on_error_1;
+  }
 
   err = 0;
  on_error_1:
