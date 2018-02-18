@@ -34,6 +34,11 @@ static unsigned int string_is_char(string_t* s, char c)
   return (s->len) && (*s->s == c);
 }
 
+static unsigned int string_is_char_null(string_t* s)
+{
+  return *s->s == 0;
+}
+
 static int string_get_double(string_t* s, size_t n, double* x)
 {
   char buf[32];
@@ -66,6 +71,14 @@ static int string_get_uint32(string_t* s, size_t n, uint32_t* x)
   return 0;
 }
 
+static int string_get_size(string_t* s, size_t n, size_t* x)
+{
+  uint32_t xx;
+  if (string_get_uint32(s, n, &xx)) return -1;
+  *x = (size_t)xx;
+  return 0;
+}
+
 __attribute__((unused))
 static int string_skip_one(string_t* s)
 {
@@ -91,6 +104,106 @@ static void string_print(string_t* s)
   size_t i;
   for (i = 0; i != s->len; ++i) printf("%c", s->s[i]);
   printf("\n");
+}
+
+
+/* command line options */
+
+typedef struct
+{
+#define OPT_FLAG_IPATH (1 << 0)
+#define OPT_FLAG_OPATH (1 << 1)
+#define OPT_FLAG_OFMT (1 << 2)
+#define OPT_FLAG_NLINE (1 << 3)
+#define OPT_FLAG_FIRST_LINE (1 << 4)
+#define OPT_FLAG_LAST_LINE (1 << 5)
+#define OPT_FLAG_DATE (1 << 6)
+  uint32_t flags;
+  const char* ipath;
+  const char* opath;
+  const char* ofmt;
+  size_t nline;
+  size_t first_line;
+  size_t last_line;
+  uint32_t date[3];
+} opt_t;
+
+
+static int opt_parse(opt_t* opt, int ac, const char** av)
+{
+  int err = -1;
+
+  opt->flags = 0;
+  opt->ipath = NULL;
+  opt->opath = NULL;
+  opt->ofmt = NULL;
+  opt->nline = 0;
+  opt->first_line = 0;
+  opt->last_line = 0;
+
+  if ((ac % 2)) goto on_error_0;
+
+  for (; ac; av += 2, ac -= 2)
+  {
+    const char* const k = av[0];
+    const char* const v = av[1];
+
+    if (strcmp(k, "-ipath") == 0)
+    {
+      opt->flags |= OPT_FLAG_IPATH;
+      opt->ipath = v;
+    }
+    else if (strcmp(k, "-opath") == 0)
+    {
+      opt->flags |= OPT_FLAG_OPATH;
+      opt->opath = v;
+    }
+    else if (strcmp(k, "-ofmt") == 0)
+    {
+      opt->flags |= OPT_FLAG_OFMT;
+      opt->ofmt = v;
+    }
+    else if (strcmp(k, "-nline") == 0)
+    {
+      char buf[32];
+      strncpy(buf, v, sizeof(buf) - 1);
+      buf[sizeof(buf) - 1] = 0;
+      opt->flags |= OPT_FLAG_NLINE;
+      opt->nline = (size_t)strtoul(buf, NULL, 10);
+    }
+    else if (strcmp(k, "-date") == 0)
+    {
+      string_t s;
+      opt->flags |= OPT_FLAG_DATE;
+      string_init(&s, v, strlen(v));
+      if (string_get_uint32(&s, 2, &opt->date[0])) goto on_error_0;
+      if (string_get_uint32(&s, 2, &opt->date[1])) goto on_error_0;
+      if (string_get_uint32(&s, 2, &opt->date[2])) goto on_error_0;
+    }
+    else if (strcmp(k, "-first_line") == 0)
+    {
+      string_t s;
+      opt->flags |= OPT_FLAG_FIRST_LINE;
+      string_init(&s, v, strlen(v));
+      if (string_get_size(&s, 0, &opt->first_line)) goto on_error_0;
+    }
+    else if (strcmp(k, "-last_line") == 0)
+    {
+      string_t s;
+      opt->flags |= OPT_FLAG_LAST_LINE;
+      string_init(&s, v, strlen(v));
+      if (string_get_size(&s, 0, &opt->last_line)) goto on_error_0;
+    }
+    else
+    {
+      goto on_error_0;
+    }
+  }
+
+  err = 0;
+
+ on_error_0:
+  return err;
 }
 
 
@@ -132,7 +245,7 @@ static void gps_print_list(gps_item_t* li)
 }
 
 
-static int gps_write_gpx(gps_item_t* li, const char* path)
+static int gps_write_gpx(gps_item_t* li, const opt_t* opt)
 {
   static const char* const gpx_header =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
@@ -146,11 +259,18 @@ static int gps_write_gpx(gps_item_t* li, const char* path)
     "<trk>"
     "<trkseg>\n";
 
+  size_t i;
+  size_t n;
+
   printf("%s", gpx_header);
 
+  i = 0;
+  n = 0;
   for (; li != NULL; li = li->next)
   {
-    if ((li->flags & GPS_FLAG_COORD) == 0) continue ;
+    if ((opt->flags & OPT_FLAG_FIRST_LINE) && (i < opt->first_line)) goto skip_line;
+    if ((opt->flags & OPT_FLAG_LAST_LINE) && (i > opt->last_line)) goto skip_line;
+    if ((opt->flags & OPT_FLAG_NLINE) && (n >= opt->nline)) goto skip_line;
 
     printf("<trkpt lat=\"%lf\" lon=\"%lf\">\n", li->coord[0], li->coord[1]);
 
@@ -163,6 +283,11 @@ static int gps_write_gpx(gps_item_t* li, const char* path)
 #endif
 
     printf("</trkpt>\n");
+
+    ++n;
+
+  skip_line:
+    ++i;
   }
 
   printf("</trkseg></trk></gpx>\n");
@@ -171,18 +296,32 @@ static int gps_write_gpx(gps_item_t* li, const char* path)
 }
 
 
-static int gps_write_plot(gps_item_t* li, const char* path)
+static int gps_write_plot(gps_item_t* li, const opt_t* opt)
 {
+  size_t i;
+  size_t n;
+
+  i = 0;
+  n = 0;
   for (; li != NULL; li = li->next)
   {
+    if ((opt->flags & OPT_FLAG_FIRST_LINE) && (i < opt->first_line)) goto skip_line;
+    if ((opt->flags & OPT_FLAG_LAST_LINE) && (i > opt->last_line)) goto skip_line;
+    if ((opt->flags & OPT_FLAG_NLINE) && (n >= opt->nline)) goto skip_line;
+
     printf("%lf\n", li->speed);
+
+    ++n;
+
+  skip_line:
+    ++i;
   }
 
   return 0;
 }
 
 
-static int gps_load_dat(gps_item_t** li, const char* path, size_t nline)
+static int gps_load_dat(gps_item_t** li, const char* path)
 {
   int fd;
   int err = -1;
@@ -208,6 +347,9 @@ static int gps_load_dat(gps_item_t** li, const char* path, size_t nline)
     if (n != GPS_LINE_SIZE) goto on_error_1;
 
     string_init(&line, buf, GPS_LINE_SIZE);
+
+    /* end of file */
+    if (string_is_char_null(&line)) break ;
 
     it = malloc(sizeof(gps_item_t));
     if (it == NULL) goto on_error_1;
@@ -307,8 +449,6 @@ static int gps_load_dat(gps_item_t** li, const char* path, size_t nline)
     }
 
     /* gps_print_item(it); */
-
-    if ((nline != 0) && ((--nline) == 0)) break ;
   }
 
   err = 0;
@@ -334,85 +474,10 @@ static size_t gps_sec_to_nline(double x)
 }
 
 
-/* command line options */
-
-typedef struct
-{
-#define OPT_FLAG_IPATH (1 << 0)
-#define OPT_FLAG_OPATH (1 << 1)
-#define OPT_FLAG_OFMT (1 << 2)
-#define OPT_FLAG_NLINE (1 << 3)
-  uint32_t flags;
-  const char* ipath;
-  const char* opath;
-  const char* ofmt;
-  size_t nline;
-} opt_t;
-
-
-static int opt_parse(opt_t* opt, int ac, const char** av)
-{
-  int err = -1;
-
-  opt->flags = 0;
-  opt->ipath = NULL;
-  opt->opath = NULL;
-  opt->ofmt = NULL;
-  opt->nline = 0;
-
-  if ((ac % 2)) goto on_error_0;
-
-  for (; ac; av += 2, ac -= 2)
-  {
-    const char* const k = av[0];
-    const char* const v = av[1];
-
-    if (strcmp(k, "-ipath") == 0)
-    {
-      opt->flags |= OPT_FLAG_IPATH;
-      opt->ipath = v;
-    }
-    else if (strcmp(k, "-opath") == 0)
-    {
-      opt->flags |= OPT_FLAG_OPATH;
-      opt->opath = v;
-    }
-    else if (strcmp(k, "-ofmt") == 0)
-    {
-      opt->flags |= OPT_FLAG_OFMT;
-      opt->ofmt = v;
-    }
-    else if (strcmp(k, "-nline") == 0)
-    {
-      char buf[32];
-      strncpy(buf, v, sizeof(buf) - 1);
-      buf[sizeof(buf) - 1] = 0;
-      opt->flags |= OPT_FLAG_NLINE;
-      opt->nline = (size_t)strtoul(buf, NULL, 10);
-    }
-    else
-    {
-      goto on_error_0;
-    }
-  }
-
-  err = 0;
-
- on_error_0:
-  return err;
-}
-
-
 /* main */
 
 int main(int ac, char** av)
 {
-#define PATH "../dat/road_140218."
-/* #define PATH "../dat/road_082018." */
-/* #define PATH "../dat/siouville_082018." */
-#define DAT_PATH PATH "dat"
-#define GPX_PATH PATH "gpx"
-
   gps_item_t* li;
   opt_t opt;
   int err = -1;
@@ -427,19 +492,13 @@ int main(int ac, char** av)
     goto on_error_0;
   }
 
-  if ((opt.flags & OPT_FLAG_NLINE) == 0)
-  {
-    opt.flags |= OPT_FLAG_NLINE;
-    opt.nline = 0;
-  }
-
   if ((opt.flags & OPT_FLAG_OFMT) == 0)
   {
     opt.flags |= OPT_FLAG_OFMT;
     opt.ofmt = "gpx";
   }
 
-  if (gps_load_dat(&li, opt.ipath, opt.nline))
+  if (gps_load_dat(&li, opt.ipath))
   {
     goto on_error_0;
   }
@@ -448,11 +507,11 @@ int main(int ac, char** av)
 
   if (strcmp(opt.ofmt, "gpx") == 0)
   {
-    if (gps_write_gpx(li, opt.opath)) goto on_error_1;
+    if (gps_write_gpx(li, &opt)) goto on_error_1;
   }
   else if (strcmp(opt.ofmt, "plt") == 0)
   {
-    if (gps_write_plot(li, opt.opath)) goto on_error_1;
+    if (gps_write_plot(li, &opt)) goto on_error_1;
   }
 
   err = 0;
