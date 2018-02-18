@@ -245,24 +245,125 @@ static void gps_print_list(gps_item_t* li)
 }
 
 
-static int gps_write_gpx(gps_item_t* li, const opt_t* opt)
-{
-  static const char* const gpx_header =
-    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-    "<gpx"
-    " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""
-    " xmlns=\"http://www.topografix.com/GPX/1/0\""
-    " xsi:schemaLocation=\"http://www.topografix.com/GPX/1/0/gpx.xsd\""
-    " version=\"1.0\""
-    " creator=\"gpx.py -- https://github.com/tkrajina/gpxpy\""
-    ">\n"
-    "<trk>"
-    "<trkseg>\n";
+/* writer */
 
+typedef struct writer
+{
+  int (*header)(struct writer*);
+  int (*item)(struct writer*, const gps_item_t*);
+  int (*footer)(struct writer*);
+  FILE* file;
+} writer_t;
+
+#define writer_printf(__w, __fmt, ...) \
+do { \
+  fprintf((__w)->file, __fmt, ##__VA_ARGS__); \
+} while (0)
+
+static int gpx_header(struct writer* w)
+{
+  writer_printf
+  (
+   w,
+   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+   "<gpx"
+   " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""
+   " xmlns=\"http://www.topografix.com/GPX/1/0\""
+   " xsi:schemaLocation=\"http://www.topografix.com/GPX/1/0/gpx.xsd\""
+   " version=\"1.0\""
+   " creator=\"gpx.py -- https://github.com/tkrajina/gpxpy\""
+   ">\n"
+   "<trk>"
+   "<trkseg>\n"
+  );
+
+  return 0;
+}
+
+static int gpx_item(struct writer* w, const gps_item_t* i)
+{
+  if ((i->flags & GPS_FLAG_COORD) == 0) return 0;
+
+  writer_printf
+  (
+   w,
+   "<trkpt lat=\"%lf\" lon=\"%lf\"></trkpt>\n",
+   i->coord[0], i->coord[1]
+  );
+
+  return 0;
+}
+
+static int gpx_footer(struct writer* w)
+{
+  writer_printf(w, "</trkseg></trk></gpx>\n");
+
+  return 0;
+}
+
+static int plt_header(struct writer* w)
+{
+  return 0;
+}
+
+static int plt_item(struct writer* w, const gps_item_t* i)
+{
+  writer_printf(w, "%lf\n", i->speed);
+  return 0;
+}
+
+static int plt_footer(struct writer* w)
+{
+  return 0;
+}
+
+static int writer_open(writer_t* w, const char* path)
+{
+  size_t i;
+
+  i = strlen(path);
+  if (i == 0) return -1;
+  for (i -= 1; i; --i)
+  {
+    if (path[i] == '.') break ;
+  }
+  if (i == 0) return -1;
+
+  if (strcmp(path + i, ".gpx") == 0)
+  {
+    w->header = gpx_header;
+    w->item = gpx_item;
+    w->footer = gpx_footer;
+  }
+  else if (strcmp(path + i, ".plt") == 0)
+  {
+    w->header = plt_header;
+    w->item = plt_item;
+    w->footer = plt_footer;
+  }
+  else
+  {
+    return -1;
+  }
+
+  w->file = fopen(path, "w+");
+  if (w->file == NULL) return -1;
+
+  return 0;
+}
+
+static int writer_close(writer_t* w)
+{
+  fclose(w->file);
+  return 0;
+}
+
+static int writer_write(writer_t* w, gps_item_t* li, const opt_t* opt)
+{
   size_t i;
   size_t n;
 
-  printf("%s", gpx_header);
+  if (w->header(w)) goto on_error_0;
 
   i = 0;
   n = 0;
@@ -272,54 +373,21 @@ static int gps_write_gpx(gps_item_t* li, const opt_t* opt)
     if ((opt->flags & OPT_FLAG_LAST_LINE) && (i > opt->last_line)) goto skip_line;
     if ((opt->flags & OPT_FLAG_NLINE) && (n >= opt->nline)) goto skip_line;
 
-    printf("<trkpt lat=\"%lf\" lon=\"%lf\">\n", li->coord[0], li->coord[1]);
-
-#if 0
-    printf("<extensions>");
-    printf("<gpxtpx:TrackPointExtension>\n");
-    printf("<gpxtpx:speed>%lf</gpxtpx:speed>\n", li->speed);
-    printf("</gpxtpx:TrackPointExtension>\n");
-    printf("</extensions>\n");
-#endif
-
-    printf("</trkpt>\n");
+    if (w->item(w, li)) goto on_error_0;
 
     ++n;
 
   skip_line:
     ++i;
   }
-
-  printf("</trkseg></trk></gpx>\n");
-
-  return 0;
-}
-
-
-static int gps_write_plot(gps_item_t* li, const opt_t* opt)
-{
-  size_t i;
-  size_t n;
-
-  i = 0;
-  n = 0;
-  for (; li != NULL; li = li->next)
-  {
-    if ((opt->flags & OPT_FLAG_FIRST_LINE) && (i < opt->first_line)) goto skip_line;
-    if ((opt->flags & OPT_FLAG_LAST_LINE) && (i > opt->last_line)) goto skip_line;
-    if ((opt->flags & OPT_FLAG_NLINE) && (n >= opt->nline)) goto skip_line;
-
-    printf("%lf\n", li->speed);
-
-    ++n;
-
-  skip_line:
-    ++i;
-  }
+  
+  if (w->footer(w)) goto on_error_0;
 
   return 0;
-}
 
+ on_error_0:
+  return -1;
+}
 
 static int gps_load_dat(gps_item_t** li, const char* path)
 {
@@ -480,6 +548,7 @@ int main(int ac, char** av)
 {
   gps_item_t* li;
   opt_t opt;
+  writer_t w;
   int err = -1;
 
   if (opt_parse(&opt, ac - 1, (const char**)(av + 1)))
@@ -492,30 +561,31 @@ int main(int ac, char** av)
     goto on_error_0;
   }
 
-  if ((opt.flags & OPT_FLAG_OFMT) == 0)
-  {
-    opt.flags |= OPT_FLAG_OFMT;
-    opt.ofmt = "gpx";
-  }
-
-  if (gps_load_dat(&li, opt.ipath))
+  if ((opt.flags & OPT_FLAG_OPATH) == 0)
   {
     goto on_error_0;
   }
 
+  if (writer_open(&w, opt.opath))
+  {
+    goto on_error_0;
+  }
+
+  if (gps_load_dat(&li, opt.ipath))
+  {
+    goto on_error_1;
+  }
+
   /* gps_print_list(li); */
 
-  if (strcmp(opt.ofmt, "gpx") == 0)
+  if (writer_write(&w, li, &opt))
   {
-    if (gps_write_gpx(li, &opt)) goto on_error_1;
-  }
-  else if (strcmp(opt.ofmt, "plt") == 0)
-  {
-    if (gps_write_plot(li, &opt)) goto on_error_1;
+    goto on_error_1;
   }
 
   err = 0;
  on_error_1:
+  writer_close(&w);
   /* TODO: gps_free_list */
  on_error_0:
   return err;
