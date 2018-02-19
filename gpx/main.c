@@ -113,14 +113,12 @@ typedef struct
 {
 #define OPT_FLAG_IPATH (1 << 0)
 #define OPT_FLAG_OPATH (1 << 1)
-#define OPT_FLAG_NLINE (1 << 2)
-#define OPT_FLAG_FIRST_LINE (1 << 3)
-#define OPT_FLAG_LAST_LINE (1 << 4)
-#define OPT_FLAG_DATE (1 << 5)
+#define OPT_FLAG_FIRST_LINE (1 << 2)
+#define OPT_FLAG_LAST_LINE (1 << 3)
+#define OPT_FLAG_DATE (1 << 4)
   uint32_t flags;
   const char* ipath;
   const char* opath;
-  size_t nline;
   size_t first_line;
   size_t last_line;
   uint32_t date[3];
@@ -134,7 +132,6 @@ static int opt_parse(opt_t* opt, int ac, const char** av)
   opt->flags = 0;
   opt->ipath = NULL;
   opt->opath = NULL;
-  opt->nline = 0;
   opt->first_line = 0;
   opt->last_line = 0;
 
@@ -154,14 +151,6 @@ static int opt_parse(opt_t* opt, int ac, const char** av)
     {
       opt->flags |= OPT_FLAG_OPATH;
       opt->opath = v;
-    }
-    else if (strcmp(k, "-nline") == 0)
-    {
-      char buf[32];
-      strncpy(buf, v, sizeof(buf) - 1);
-      buf[sizeof(buf) - 1] = 0;
-      opt->flags |= OPT_FLAG_NLINE;
-      opt->nline = (size_t)strtoul(buf, NULL, 10);
     }
     else if (strcmp(k, "-date") == 0)
     {
@@ -363,7 +352,6 @@ static int writer_write(writer_t* w, gps_item_t* li, const opt_t* opt)
   {
     if ((opt->flags & OPT_FLAG_FIRST_LINE) && (i < opt->first_line)) goto skip_line;
     if ((opt->flags & OPT_FLAG_LAST_LINE) && (i > opt->last_line)) goto skip_line;
-    if ((opt->flags & OPT_FLAG_NLINE) && (n >= opt->nline)) goto skip_line;
 
     if (w->item(w, li)) goto on_error_0;
 
