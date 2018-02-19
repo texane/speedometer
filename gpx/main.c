@@ -113,15 +113,13 @@ typedef struct
 {
 #define OPT_FLAG_IPATH (1 << 0)
 #define OPT_FLAG_OPATH (1 << 1)
-#define OPT_FLAG_OFMT (1 << 2)
-#define OPT_FLAG_NLINE (1 << 3)
-#define OPT_FLAG_FIRST_LINE (1 << 4)
-#define OPT_FLAG_LAST_LINE (1 << 5)
-#define OPT_FLAG_DATE (1 << 6)
+#define OPT_FLAG_NLINE (1 << 2)
+#define OPT_FLAG_FIRST_LINE (1 << 3)
+#define OPT_FLAG_LAST_LINE (1 << 4)
+#define OPT_FLAG_DATE (1 << 5)
   uint32_t flags;
   const char* ipath;
   const char* opath;
-  const char* ofmt;
   size_t nline;
   size_t first_line;
   size_t last_line;
@@ -136,7 +134,6 @@ static int opt_parse(opt_t* opt, int ac, const char** av)
   opt->flags = 0;
   opt->ipath = NULL;
   opt->opath = NULL;
-  opt->ofmt = NULL;
   opt->nline = 0;
   opt->first_line = 0;
   opt->last_line = 0;
@@ -157,11 +154,6 @@ static int opt_parse(opt_t* opt, int ac, const char** av)
     {
       opt->flags |= OPT_FLAG_OPATH;
       opt->opath = v;
-    }
-    else if (strcmp(k, "-ofmt") == 0)
-    {
-      opt->flags |= OPT_FLAG_OFMT;
-      opt->ofmt = v;
     }
     else if (strcmp(k, "-nline") == 0)
     {
