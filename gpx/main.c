@@ -116,12 +116,14 @@ typedef struct
 #define OPT_FLAG_FIRST_LINE (1 << 2)
 #define OPT_FLAG_LAST_LINE (1 << 3)
 #define OPT_FLAG_DATE (1 << 4)
+#define OPT_FLAG_DETECT_WAVES (1 << 5)
   uint32_t flags;
   const char* ipath;
   const char* opath;
   size_t first_line;
   size_t last_line;
   uint32_t date[3];
+  const char* wave_dir;
 } opt_t;
 
 
@@ -134,6 +136,7 @@ static int opt_parse(opt_t* opt, int ac, const char** av)
   opt->opath = NULL;
   opt->first_line = 0;
   opt->last_line = 0;
+  opt->wave_dir = NULL;
 
   if ((ac % 2)) goto on_error_0;
 
@@ -175,6 +178,11 @@ static int opt_parse(opt_t* opt, int ac, const char** av)
       string_init(&s, v, strlen(v));
       if (string_get_size(&s, 0, &opt->last_line)) goto on_error_0;
     }
+    else if (strcmp(k, "-detect_waves") == 0)
+    {
+      opt->flags |= OPT_FLAG_DETECT_WAVES;
+      opt->wave_dir = v;
+    }
     else
     {
       goto on_error_0;
@@ -203,7 +211,10 @@ typedef struct gps_item
   double coord[2];
   /* in kmh */
   double speed;
+
+  struct gps_item* prev;
   struct gps_item* next;
+
 } gps_item_t;
 
 
@@ -225,150 +236,6 @@ static void gps_print_list(gps_item_t* li)
   for (it = li; it != NULL; it = it->next) gps_print_item(it);
 }
 
-
-/* writer */
-
-typedef struct writer
-{
-  int (*header)(struct writer*);
-  int (*item)(struct writer*, const gps_item_t*);
-  int (*footer)(struct writer*);
-  FILE* file;
-} writer_t;
-
-#define writer_printf(__w, __fmt, ...) \
-do { \
-  fprintf((__w)->file, __fmt, ##__VA_ARGS__); \
-} while (0)
-
-static int gpx_header(struct writer* w)
-{
-  writer_printf
-  (
-   w,
-   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-   "<gpx"
-   " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""
-   " xmlns=\"http://www.topografix.com/GPX/1/0\""
-   " xsi:schemaLocation=\"http://www.topografix.com/GPX/1/0/gpx.xsd\""
-   " version=\"1.0\""
-   " creator=\"gpx.py -- https://github.com/tkrajina/gpxpy\""
-   ">\n"
-   "<trk>"
-   "<trkseg>\n"
-  );
-
-  return 0;
-}
-
-static int gpx_item(struct writer* w, const gps_item_t* i)
-{
-  if ((i->flags & GPS_FLAG_COORD) == 0) return 0;
-
-  writer_printf
-  (
-   w,
-   "<trkpt lat=\"%lf\" lon=\"%lf\"></trkpt>\n",
-   i->coord[0], i->coord[1]
-  );
-
-  return 0;
-}
-
-static int gpx_footer(struct writer* w)
-{
-  writer_printf(w, "</trkseg></trk></gpx>\n");
-
-  return 0;
-}
-
-static int plt_header(struct writer* w)
-{
-  return 0;
-}
-
-static int plt_item(struct writer* w, const gps_item_t* i)
-{
-  writer_printf(w, "%lf\n", i->speed);
-  return 0;
-}
-
-static int plt_footer(struct writer* w)
-{
-  return 0;
-}
-
-static int writer_open(writer_t* w, const char* path)
-{
-  size_t i;
-
-  i = strlen(path);
-  if (i == 0) return -1;
-  for (i -= 1; i; --i)
-  {
-    if (path[i] == '.') break ;
-  }
-  if (i == 0) return -1;
-
-  if (strcmp(path + i, ".gpx") == 0)
-  {
-    w->header = gpx_header;
-    w->item = gpx_item;
-    w->footer = gpx_footer;
-  }
-  else if (strcmp(path + i, ".plt") == 0)
-  {
-    w->header = plt_header;
-    w->item = plt_item;
-    w->footer = plt_footer;
-  }
-  else
-  {
-    return -1;
-  }
-
-  w->file = fopen(path, "w+");
-  if (w->file == NULL) return -1;
-
-  return 0;
-}
-
-static int writer_close(writer_t* w)
-{
-  fclose(w->file);
-  return 0;
-}
-
-static int writer_write(writer_t* w, gps_item_t* li, const opt_t* opt)
-{
-  size_t i;
-  size_t n;
-
-  if (w->header(w)) goto on_error_0;
-
-  i = 0;
-  n = 0;
-  for (; li != NULL; li = li->next)
-  {
-    if ((opt->flags & OPT_FLAG_FIRST_LINE) && (i < opt->first_line)) goto skip_line;
-    if ((opt->flags & OPT_FLAG_LAST_LINE) && (i > opt->last_line)) goto skip_line;
-
-    if (w->item(w, li)) goto on_error_0;
-
-    ++n;
-
-  skip_line:
-    ++i;
-  }
-  
-  if (w->footer(w)) goto on_error_0;
-
-  return 0;
-
- on_error_0:
-  return -1;
-}
-
 static int gps_load_dat(gps_item_t** li, const char* path)
 {
   int fd;
@@ -376,16 +243,14 @@ static int gps_load_dat(gps_item_t** li, const char* path)
 #define GPS_LINE_SIZE 64
   char buf[GPS_LINE_SIZE];
   string_t line;
-  gps_item_t** prev;
+  gps_item_t* prev;
   gps_item_t* it;
-
-  *li = NULL;
 
   fd = open(path, O_RDONLY);
   if (fd == -1) goto on_error_0;
 
   *li = NULL;
-  prev = li;
+  prev = NULL;
 
   while (1)
   {
@@ -414,8 +279,10 @@ static int gps_load_dat(gps_item_t** li, const char* path)
     it->speed = 0.0;
     it->next = NULL;
 
-    *prev = it;
-    prev = &it->next;
+    if (prev != NULL) prev->next = it;
+    else *li = it;
+    it->prev = prev;
+    prev = it;
 
     /* printf("a: "); string_print(&line); */
 
@@ -514,11 +381,289 @@ static int gps_load_dat(gps_item_t** li, const char* path)
 }
 
 
+/* writer */
+
+typedef struct writer
+{
+  int (*header)(struct writer*);
+  int (*item)(struct writer*, const gps_item_t*);
+  int (*footer)(struct writer*);
+  FILE* file;
+} writer_t;
+
+#define writer_printf(__w, __fmt, ...) \
+ fprintf((__w)->file, __fmt, ##__VA_ARGS__)
+
+static int gpx_header(struct writer* w)
+{
+  writer_printf
+  (
+   w,
+   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+   "<gpx"
+   " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""
+   " xmlns=\"http://www.topografix.com/GPX/1/0\""
+   " xsi:schemaLocation=\"http://www.topografix.com/GPX/1/0/gpx.xsd\""
+   " version=\"1.0\""
+   " creator=\"gpx.py -- https://github.com/tkrajina/gpxpy\""
+   ">\n"
+   "<trk>"
+   "<trkseg>\n"
+  );
+
+  return 0;
+}
+
+static int gpx_item(struct writer* w, const gps_item_t* i)
+{
+  if ((i->flags & GPS_FLAG_COORD) == 0) return 0;
+
+  writer_printf
+  (
+   w,
+   "<trkpt lat=\"%lf\" lon=\"%lf\"></trkpt>\n",
+   i->coord[0], i->coord[1]
+  );
+
+  return 0;
+}
+
+static int gpx_footer(struct writer* w)
+{
+  writer_printf(w, "</trkseg></trk></gpx>\n");
+
+  return 0;
+}
+
+static int plt_header(struct writer* w)
+{
+  return 0;
+}
+
+static int plt_item(struct writer* w, const gps_item_t* i)
+{
+  writer_printf(w, "%lf\n", i->speed);
+  return 0;
+}
+
+static int plt_footer(struct writer* w)
+{
+  return 0;
+}
+
+static int nmea_header(struct writer* w)
+{
+  return 0;
+}
+
+static int nmea_item(struct writer* w, const gps_item_t* i)
+{
+  /* GPRMC line format */
+
+  size_t len;
+
+  len = 0;
+
+  if (i->flags & GPS_FLAG_DATE)
+  {
+    len += (size_t)writer_printf
+      (w, "%02u%02u%02u,", i->date[3], i->date[4], i->date[5]);
+  }
+  else
+  {
+    len += (size_t)writer_printf(w, ",");
+  }
+
+  len += (size_t)writer_printf(w, "A,");
+
+  if (i->flags & GPS_FLAG_COORD)
+  {
+    /* convert in nmea format */
+
+    double a;
+    double b;
+    char c;
+    double d;
+
+    a = fabs(i->coord[0]);
+    b = trunc(i->coord[0]);
+    d = (a - b) * 60.0;
+    if (i->coord[0] < 0) c = 'S';
+    else c = 'N';
+    len += (size_t)writer_printf(w, "%.2lf,%c,", d, c);
+
+    a = fabs(i->coord[1]);
+    b = trunc(i->coord[1]);
+    d = (a - b) * 60.0;
+    if (i->coord[0] < 0) c = 'W';
+    else c = 'E';
+    len += (size_t)writer_printf(w, "%.2lf,%c,", d, c);
+  }
+  else
+  {
+    len += (size_t)writer_printf(w, ",,,,");
+  }
+
+  if (i->flags & GPS_FLAG_SPEED)
+  {
+    /* kmh to knot */
+    double d;
+    d = i->speed / 1.852;
+    len += (size_t)writer_printf(w, "%.3lf,", d);
+  }
+  else
+  {
+    len += (size_t)writer_printf(w, ",");
+  }
+
+  if (i->flags & GPS_FLAG_DATE)
+  {
+    len += (size_t)writer_printf
+      (w, "%02u%02u%02u", i->date[0], i->date[1], i->date[2]);
+  }
+  else
+  {
+    len += (size_t)writer_printf(w, ",");
+  }
+
+  len += (size_t)writer_printf(w, ",,");
+
+  len += (size_t)writer_printf(w, "\n");
+
+  for (; len != GPS_LINE_SIZE; ++len)
+  {
+    writer_printf(w, " ");
+  }
+
+  return 0;
+}
+
+static int nmea_footer(struct writer* w)
+{
+  return 0;
+}
+
+static int writer_open(writer_t* w, const char* path)
+{
+  size_t i;
+
+  i = strlen(path);
+  if (i == 0) return -1;
+  for (i -= 1; i; --i)
+  {
+    if (path[i] == '.') break ;
+  }
+  if (i == 0) return -1;
+
+  if (strcmp(path + i, ".gpx") == 0)
+  {
+    w->header = gpx_header;
+    w->item = gpx_item;
+    w->footer = gpx_footer;
+  }
+  else if (strcmp(path + i, ".plt") == 0)
+  {
+    w->header = plt_header;
+    w->item = plt_item;
+    w->footer = plt_footer;
+  }
+  else if (strcmp(path + i, ".nmea") == 0)
+  {
+    w->header = nmea_header;
+    w->item = nmea_item;
+    w->footer = nmea_footer;
+  }
+  else
+  {
+    return -1;
+  }
+
+  w->file = fopen(path, "w+");
+  if (w->file == NULL) return -1;
+
+  return 0;
+}
+
+static int writer_close(writer_t* w)
+{
+  fclose(w->file);
+  return 0;
+}
+
+static int writer_write(writer_t* w, gps_item_t* li, const opt_t* opt)
+{
+  size_t i;
+  size_t n;
+
+  if (w->header(w)) goto on_error_0;
+
+  i = 0;
+  n = 0;
+  for (; li != NULL; li = li->next)
+  {
+    if ((opt->flags & OPT_FLAG_FIRST_LINE) && (i < opt->first_line)) goto skip_line;
+    if ((opt->flags & OPT_FLAG_LAST_LINE) && (i > opt->last_line)) goto skip_line;
+
+    if (w->item(w, li)) goto on_error_0;
+
+    ++n;
+
+  skip_line:
+    ++i;
+  }
+  
+  if (w->footer(w)) goto on_error_0;
+
+  return 0;
+
+ on_error_0:
+  return -1;
+}
+
 __attribute__((unused))
 static size_t gps_sec_to_nline(double x)
 {
   /* fsampl = 1Hz */
   return (size_t)ceil(x);
+}
+
+
+/* wave detection algorithm */
+
+static int detect_waves(const gps_item_t* i, const opt_t* o)
+{
+  static const double threshold = 15.0;
+  const gps_item_t* first;
+  const gps_item_t* last;
+
+  first = NULL;
+  last = NULL;
+
+  for (; i != NULL; i = i->next)
+  {
+    if ((i->flags & GPS_FLAG_SPEED) == 0) continue ;
+
+    if (first == NULL)
+    {
+      if (i->speed >= threshold)
+      {
+	/* TODO: take a few points before */
+	printf("new_wave\n");
+	first = i;
+      }
+    }
+    else
+    {
+      if (i->speed < threshold)
+      {
+	/* TODO: take a few points after */
+	first = NULL;
+	last = NULL;
+      }
+    }
+  }
+
+  return 0;
 }
 
 
@@ -541,31 +686,42 @@ int main(int ac, char** av)
     goto on_error_0;
   }
 
-  if ((opt.flags & OPT_FLAG_OPATH) == 0)
-  {
-    goto on_error_0;
-  }
-
-  if (writer_open(&w, opt.opath))
-  {
-    goto on_error_0;
-  }
-
   if (gps_load_dat(&li, opt.ipath))
   {
     goto on_error_1;
   }
 
-  /* gps_print_list(li); */
-
-  if (writer_write(&w, li, &opt))
+  if (opt.flags & OPT_FLAG_DETECT_WAVES)
   {
-    goto on_error_1;
+    if (detect_waves(li, &opt))
+    {
+      goto on_error_1;
+    }
+  }
+  else
+  {
+    if ((opt.flags & OPT_FLAG_OPATH) == 0)
+    {
+      goto on_error_0;
+    }
+
+    if (writer_open(&w, opt.opath))
+    {
+      goto on_error_0;
+    }
+
+    err = writer_write(&w, li, &opt);
+
+    writer_close(&w);
+
+    if (err)
+    {
+      goto on_error_1;
+    }
   }
 
   err = 0;
  on_error_1:
-  writer_close(&w);
   /* TODO: gps_free_list */
  on_error_0:
   return err;
