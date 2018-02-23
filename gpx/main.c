@@ -7,6 +7,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 
 
 /* string */
@@ -126,17 +127,21 @@ typedef struct
   const char* wave_dir;
 } opt_t;
 
-
-static int opt_parse(opt_t* opt, int ac, const char** av)
+static void opt_init(opt_t* opt)
 {
-  int err = -1;
-
   opt->flags = 0;
   opt->ipath = NULL;
   opt->opath = NULL;
   opt->first_line = 0;
   opt->last_line = 0;
   opt->wave_dir = NULL;
+}
+
+static int opt_parse(opt_t* opt, int ac, const char** av)
+{
+  int err = -1;
+
+  opt_init(opt);
 
   if ((ac % 2)) goto on_error_0;
 
@@ -209,6 +214,7 @@ typedef struct gps_item
   uint32_t date[6];
   /* lat lng in decimal degrees */
   double coord[2];
+  double nmea_coord[2];
   /* in kmh */
   double speed;
 
@@ -308,6 +314,7 @@ static int gps_load_dat(gps_item_t** li, const char* path)
       if (string_get_uint32(&line, 2, &ui)) goto on_error_1;
       if (string_get_double(&line, 0, &d)) goto on_error_1;
       it->coord[0] = (double)ui + d / 60.0;
+      it->nmea_coord[0] = (double)ui * 100.0 + d;
       if (string_skip_char(&line, ',', 1)) goto on_error_1;
       if (string_is_char(&line, 'S')) it->coord[0] *= -1.0;
     }
@@ -330,6 +337,7 @@ static int gps_load_dat(gps_item_t** li, const char* path)
       if (string_get_uint32(&line, 3, &ui)) goto on_error_1;
       if (string_get_double(&line, 0, &d)) goto on_error_1;
       it->coord[1] = (double)ui + d / 60.0;
+      it->nmea_coord[1] = (double)ui * 100.0 + d;
       if (string_skip_char(&line, ',', 1)) goto on_error_1;
       if (string_is_char(&line, 'W')) it->coord[1] *= -1.0;
     }
@@ -467,7 +475,7 @@ static int nmea_item(struct writer* w, const gps_item_t* i)
   if (i->flags & GPS_FLAG_DATE)
   {
     len += (size_t)writer_printf
-      (w, "%02u%02u%02u,", i->date[3], i->date[4], i->date[5]);
+      (w, "%02u%02u%02u,", i->date[0], i->date[1], i->date[2]);
   }
   else
   {
@@ -480,24 +488,21 @@ static int nmea_item(struct writer* w, const gps_item_t* i)
   {
     /* convert in nmea format */
 
-    double a;
-    double b;
     char c;
+    double ui;
     double d;
-
-    a = fabs(i->coord[0]);
-    b = trunc(i->coord[0]);
-    d = (a - b) * 60.0;
+  
     if (i->coord[0] < 0) c = 'S';
     else c = 'N';
-    len += (size_t)writer_printf(w, "%.2lf,%c,", d, c);
+    ui = trunc(i->nmea_coord[0]);
+    d = (i->nmea_coord[0] - ui) * 100000.0;
+    len += (size_t)writer_printf(w, "%04u.%05u,%c,", (unsigned int)ui, (unsigned int)d, c);
 
-    a = fabs(i->coord[1]);
-    b = trunc(i->coord[1]);
-    d = (a - b) * 60.0;
-    if (i->coord[0] < 0) c = 'W';
+    if (i->coord[1] < 0) c = 'W';
     else c = 'E';
-    len += (size_t)writer_printf(w, "%.2lf,%c,", d, c);
+    ui = trunc(i->nmea_coord[1]);
+    d = (i->nmea_coord[1] - ui) * 100000.0;
+    len += (size_t)writer_printf(w, "%05u.%05u,%c,", (unsigned int)ui, (unsigned int)d, c);
   }
   else
   {
@@ -519,7 +524,7 @@ static int nmea_item(struct writer* w, const gps_item_t* i)
   if (i->flags & GPS_FLAG_DATE)
   {
     len += (size_t)writer_printf
-      (w, "%02u%02u%02u", i->date[0], i->date[1], i->date[2]);
+      (w, "%02u%02u%02u", i->date[3], i->date[4], i->date[5]);
   }
   else
   {
@@ -590,7 +595,8 @@ static int writer_close(writer_t* w)
   return 0;
 }
 
-static int writer_write(writer_t* w, gps_item_t* li, const opt_t* opt)
+static int writer_write
+(writer_t* w, const gps_item_t* first, const gps_item_t* last, const opt_t* opt)
 {
   size_t i;
   size_t n;
@@ -599,12 +605,12 @@ static int writer_write(writer_t* w, gps_item_t* li, const opt_t* opt)
 
   i = 0;
   n = 0;
-  for (; li != NULL; li = li->next)
+  for (; first != last; first = first->next)
   {
     if ((opt->flags & OPT_FLAG_FIRST_LINE) && (i < opt->first_line)) goto skip_line;
     if ((opt->flags & OPT_FLAG_LAST_LINE) && (i > opt->last_line)) goto skip_line;
 
-    if (w->item(w, li)) goto on_error_0;
+    if (w->item(w, first)) goto on_error_0;
 
     ++n;
 
@@ -635,6 +641,19 @@ static int detect_waves(const gps_item_t* i, const opt_t* o)
   static const double threshold = 15.0;
   const gps_item_t* first;
   const gps_item_t* last;
+  unsigned int n;
+  int err = -1;
+
+  errno = 0;
+  if (mkdir(o->wave_dir, 0755))
+  {
+    if (errno != EEXIST)
+    {
+      goto on_error_0;
+    }
+  }
+
+  n = 0;
 
   first = NULL;
   last = NULL;
@@ -656,14 +675,37 @@ static int detect_waves(const gps_item_t* i, const opt_t* o)
     {
       if (i->speed < threshold)
       {
+	writer_t w;
+	char path[64];
+	opt_t oo;
+
 	/* TODO: take a few points after */
+
+	/* write wave in nmea format */
+
+	snprintf(path, sizeof(path), "%s/%04x.nmea", o->wave_dir, n);
+
+	if (writer_open(&w, path))
+	{
+	  goto on_error_1;
+	}
+
+	opt_init(&oo);
+	writer_write(&w, first, last, &oo);
+	writer_close(&w);
+
+	++n;
 	first = NULL;
 	last = NULL;
       }
     }
   }
 
-  return 0;
+  err = 0;
+
+ on_error_1:
+ on_error_0:
+  return err;
 }
 
 
@@ -710,7 +752,7 @@ int main(int ac, char** av)
       goto on_error_0;
     }
 
-    err = writer_write(&w, li, &opt);
+    err = writer_write(&w, li, NULL, &opt);
 
     writer_close(&w);
 
