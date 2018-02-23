@@ -290,8 +290,6 @@ static int gps_load_dat(gps_item_t** li, const char* path)
     it->prev = prev;
     prev = it;
 
-    /* printf("a: "); string_print(&line); */
-
     if (string_is_char(&line, ',') == 0)
     {
       it->flags |= GPS_FLAG_DATE;
@@ -301,8 +299,6 @@ static int gps_load_dat(gps_item_t** li, const char* path)
     }
 
     if (string_skip_char(&line, ',', 2)) goto on_error_1;
-
-    /* printf("b: "); string_print(&line); */
 
     if (string_is_char(&line, ',') == 0)
     {
@@ -325,8 +321,6 @@ static int gps_load_dat(gps_item_t** li, const char* path)
 
     if (string_skip_char(&line, ',', 1)) goto on_error_1;
 
-    /* printf("c: "); string_print(&line); */
-
     if (string_is_char(&line, ',') == 0)
     {
       /* longitude, dms to decimal degrees */
@@ -348,8 +342,6 @@ static int gps_load_dat(gps_item_t** li, const char* path)
 
     if (string_skip_char(&line, ',', 1)) goto on_error_1;
 
-    /* printf("d: "); string_print(&line); */
-
     if (string_is_char(&line, ',') == 0)
     {
       /* speed, knot to kmh */
@@ -360,8 +352,6 @@ static int gps_load_dat(gps_item_t** li, const char* path)
     }
 
     if (string_skip_char(&line, ',', 1)) goto on_error_1;
-
-    /* printf("e: "); string_print(&line); */
 
     if (string_is_char(&line, ',') == 0)
     {
