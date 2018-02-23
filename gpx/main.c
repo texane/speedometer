@@ -630,7 +630,6 @@ static int detect_waves(const gps_item_t* i, const opt_t* o)
 {
   static const double threshold = 15.0;
   const gps_item_t* first;
-  const gps_item_t* last;
   unsigned int n;
   int err = -1;
 
@@ -646,7 +645,6 @@ static int detect_waves(const gps_item_t* i, const opt_t* o)
   n = 0;
 
   first = NULL;
-  last = NULL;
 
   for (; i != NULL; i = i->next)
   {
@@ -656,8 +654,11 @@ static int detect_waves(const gps_item_t* i, const opt_t* o)
     {
       if (i->speed >= threshold)
       {
-	/* TODO: take a few points before */
-	printf("new_wave\n");
+	/* take a few points before */
+
+	if (first->prev != NULL) first = first->prev;
+	if (first->prev != NULL) first = first->prev;
+
 	first = i;
       }
     }
@@ -665,11 +666,16 @@ static int detect_waves(const gps_item_t* i, const opt_t* o)
     {
       if (i->speed < threshold)
       {
+	const gps_item_t* last;
 	writer_t w;
 	char path[64];
 	opt_t oo;
 
-	/* TODO: take a few points after */
+	/* take a few points after */
+
+	last = i;
+	if (last->next != NULL) last = last->next;
+	if (last->next != NULL) last = last->next;
 
 	/* write wave in nmea format */
 
@@ -686,7 +692,6 @@ static int detect_waves(const gps_item_t* i, const opt_t* o)
 
 	++n;
 	first = NULL;
-	last = NULL;
       }
     }
   }
