@@ -538,6 +538,33 @@ static int nmea_footer(struct writer* w)
   return 0;
 }
 
+static int csv_header(struct writer* w)
+{
+  writer_printf(w, "lat,lon,desc\n");
+  return 0;
+}
+
+static int csv_item(struct writer* w, const gps_item_t* i)
+{
+  if ((i->flags & GPS_FLAG_COORD) == 0) return 0;
+  if ((i->flags & GPS_FLAG_SPEED) == 0) return 0;
+
+  writer_printf(w, "%lf,%lf,", i->coord[0], i->coord[1]);
+  writer_printf(w, "%lf", i->speed);
+  writer_printf(w, "\n");
+
+  return 0;
+
+
+  writer_printf(w, "%lf\n", i->speed);
+  return 0;
+}
+
+static int csv_footer(struct writer* w)
+{
+  return 0;
+}
+
 static int writer_open(writer_t* w, const char* path)
 {
   size_t i;
@@ -561,6 +588,12 @@ static int writer_open(writer_t* w, const char* path)
     w->header = plt_header;
     w->item = plt_item;
     w->footer = plt_footer;
+  }
+  else if (strcmp(path + i, ".csv") == 0)
+  {
+    w->header = csv_header;
+    w->item = csv_item;
+    w->footer = csv_footer;
   }
   else if (strcmp(path + i, ".nmea") == 0)
   {
@@ -656,10 +689,9 @@ static int detect_waves(const gps_item_t* i, const opt_t* o)
       {
 	/* take a few points before */
 
-	if (first->prev != NULL) first = first->prev;
-	if (first->prev != NULL) first = first->prev;
-
 	first = i;
+	if (first->prev != NULL) first = first->prev;
+	if (first->prev != NULL) first = first->prev;
       }
     }
     else
